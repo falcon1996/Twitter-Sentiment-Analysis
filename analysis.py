@@ -106,3 +106,34 @@ corpusFile = "/mnt/d/dhruv/twitter/sanders-twitter-0.2/corpus.csv"
 tweetDataFile = "/mnt/d/dhruv/twitter/sanders-twitter-0.2/tweetDataFile.csv"
 
 trainingData = createLimitedTrainingCorpus(corpusFile, tweetDataFile)
+
+
+import re
+from nltk.tokenize import word_tokenize
+from string import punctuation
+from nltk.corpus import stopwords
+
+class PreProcessTweets:
+	def __init__(self):
+		self.stopwords = set(stopwords.words('english')+list(punctuation)+['AT_USER', 'URL'])
+
+	def processTweets(self, list_of_tweets):
+		#list_of_tweets is a dictionary of text and label
+
+		processTweets = []
+
+		for tweet in list_of_tweets:
+			processTweets.append(self._processTweet(tweet(["text"]),tweet["label"]))
+
+		return processTweets
+
+	def _processTweet(self,tweet):
+		tweet = tweet.lower()
+		tweet = re.sub('')
+
+		tweet = word_tokenize(tweet)
+
+tweetProcessor = PreProcessTweets()
+ppTrainingData = tweetProcessor.processTweets(trainingData)
+ppTestData = tweetProcessor.processTweets(testData)
+
