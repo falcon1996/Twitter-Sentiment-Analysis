@@ -63,6 +63,7 @@ def createTrainingCorpus(corpusFile, tweetDataFile):
 	return trainingData
 """
 
+#for using limited tweet data set
 def createLimitedTrainingCorpus(corpusFile, tweetDataFile):
 
 	import csv
@@ -115,7 +116,7 @@ from nltk.corpus import stopwords
 
 class PreProcessTweets:
 	def __init__(self):
-		self.stopwords = set(stopwords.words('english')+list(punctuation)+['AT_USER', 'URL'])
+		self._stopwords = set(stopwords.words('english')+list(punctuation)+['AT_USER', 'URL'])
 
 	def processTweets(self, list_of_tweets):
 		#list_of_tweets is a dictionary of text and label
@@ -128,12 +129,129 @@ class PreProcessTweets:
 		return processTweets
 
 	def _processTweet(self,tweet):
+		#conerting to lower case
 		tweet = tweet.lower()
-		tweet = re.sub('')
+
+		#replacing links with word URL
+		tweet = re.sub('((www\.[^\s]+)|(https?://[^\s]+))', 'URL', tweet)
+
+		#replace @username with "AT_USER"
+		tweet = re.sub('@[^\s]+', 'AT_USER', tweet)
+
+		#replace #word with word
+		tweet = re.sub(r'#([^\s]+)', r'\1', tweet)
 
 		tweet = word_tokenize(tweet)
+
+		return [word for word in tweet if word not in self._stopwords]
+
 
 tweetProcessor = PreProcessTweets()
 ppTrainingData = tweetProcessor.processTweets(trainingData)
 ppTestData = tweetProcessor.processTweets(testData)
 
+print ppTrainingData[:5]
+
+
+import nltk
+def buildVocabulary(ppTrainingData):
+	all_words = []
+	for(words, sentiment) in ppTrainingData:
+		all_words.extend(words)
+		wordlist = nltk.FreqDist(all_words)
+		word_features = wordlist.keys()
+
+		return word_features
+
+def extract_features(tweet):
+	tweet_words = set(tweet)
+	features = {}
+	for word in word_features:
+		features['contains(%s)' % word] = (word in tweet_words)
+
+	return features
+
+word_features = buildVocabulary(ppTrainingData)
+trainingFeatures = nltk.classify.apply_features(extract_features, ppTrainingData)
+
+NBayesClassifier = nltk.NBayesClassifier.train(trainingFeatures)
+
+
+#support vector machines
+
+from nltk.corpus import sentiwordnet as swn
+import numpy as np
+from sklearn.feature_extraction.text import CountVectorizer
+
+
+svmTrainingData = [' '.join(tweet[0]) for tweet in ppTrainingData]
+
+vectorizer = CountVectorizer(min_df=1)
+X = vectorizer.fit_transform(svmTrainingData).toarray()
+
+vocabulary = vectorizer.get_feature_names()
+
+swn_weights = []
+
+for word in vocabulary:
+	try:
+		synset = list(swn.senti_synsets(word))
+		common_meaning = synset[0]
+
+		if(common_meaning.pos_score() > common_meaning.neg_score()):
+			weight = common_meaning.pos_score()
+
+		elif (common_meaning.pos_score() < common_meaning.neg_score()):
+			weight = common_meaning.neg_score()
+
+		else:
+			weight = 0
+
+	except:
+		weight = 0
+
+	swn_weights.append(weight)
+
+
+swn_X = []
+for row in X:
+	swn_X.append(np.multiply(row, np.array(swn_weights)))
+
+swn_X = np.vstack(swn_X)
+
+
+label_to_array = {"positive":1, "negative":2}
+labels = [label_to_array[tweet[1]] for tweet in ppTrainingData]
+y = np.array(labels)
+
+from sklearn.svm import SVC 
+SVCClassifier = SVC()
+SVCClassifier.fit(swn_X, y)
+
+#################Running Classifier##############
+
+#Naive Bayes
+NBResultLabels = [NBayesClassifier.classify(extract_features(tweet[0])) for tweet in ppTrainingData]
+
+#SVM
+SVResultLabels = []
+for tweet in ppTestData:
+	tweet_sentence = ' '.join(tweet[0])
+	svmFeatures = np.multiply(vectorizer.transform([tweet_sentence]).toarray(), np.array(swn_weights))
+	SVMResultLabels.append(SVMClassifier.predict(svmFeatures[0]))
+
+
+
+############To get majority sentiment#########
+
+if NBResultLabels.count('positive') > NBResultLabels.count('negative'):
+	print "NB Result Positive Sentiment" + str(100 * NBResultLabels.count('positive')/len(NBResultLabels)+ "%")
+else:
+	print "NB Result Negative Sentiment" + str(100 * NBResultLabels.count('negative')/len(NBResultLabels)+ "%")
+
+
+
+if SVMResultLabels.count(1) > SVMResultLabels.count(2):
+	print "SVM Result Positive Sentiment" + str(100 * SVMResultLabels.count(1)/len(SVMResultLabels)+ "%")
+else:
+	print "SVM Result Negative Sentiment" + str(100 * SVMResultLabels.count(2)/len(SVMResultLabels)+ "%")
